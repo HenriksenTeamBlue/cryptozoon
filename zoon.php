@@ -3,7 +3,7 @@
 class CryptoZoonFarmer
 {
     private $hashRate = 0;
-    private $totalHashRate = 2050324000;
+    private $totalHashRate = 2064166400;
     private $poolDailyReward = 1788500;
     private $zoans;
     private $zoon = 0;
@@ -278,7 +278,7 @@ class Zoan
 }
 
 $zoans = Zoan::makeMulti(2, 1, 300, 2000);
-$zoans = array_merge($zoans, Zoan::makeMulti(23, 1, 400, 1800));
+$zoans = array_merge($zoans, Zoan::makeMulti(24, 1, 400, 1800));
 $zoans[] = new Zoan(2, 1000, 3800);
 
 $farmer = new CryptoZoonFarmer($zoans);
