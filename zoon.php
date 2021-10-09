@@ -26,7 +26,7 @@ class CryptoZoonFarmer
         $this->zoonToUSD = $zoonPrice;
 
         $this->initialHashRate = $this->hashRate;
-        $this->initialInvestment = $this->investment;
+        $this->initialInvestment = $this->toCurrency($this->investment, $this->zoonToUSD, self::$USDToDKK);
     }
 
     public function addZoan(Zoan $zoan, int $amount = 1): void {
@@ -47,16 +47,19 @@ class CryptoZoonFarmer
         }
     }
 
-    private function toCurrency(float $zoon, $currency): float {
+    private function toCurrency(float $zoon, float $zoonPrice, $currency): float {
+
+        $usdPrice = $zoon * $zoonPrice;
+
         if ($currency === self::$USD) {
-            return round($zoon * $this->zoonToUSD, 2);
+            return round($usdPrice, 2);
         }
 
         if ($currency === self::$EUR) {
-            return round($zoon * $this->zoonToUSD * self::$USDToEUR, 2);
+            return round($usdPrice * self::$USDToEUR, 2);
         }
 
-        return round($zoon * $this->zoonToUSD * self::$USDToDKK, 2);
+        return round($usdPrice * self::$USDToDKK, 2);
     }
 
     public function farm(): float
@@ -75,50 +78,52 @@ class CryptoZoonFarmer
         return round($this->zoon, 2);
     }
 
-    public function executeStrategy(int $days, Zoan $zoan, int $purchaseInterval = 1): void {
+    public function executeStrategy(int $days, Zoan $zoan, int $purchaseInterval = 1, float $inflation = 0): void {
 
         $incomePeriod = 0;
 
-        for ($i = 1; $i <= $days; $i++) {
+        for ($day = 1; $day <= $days; $day++) {
 
-            $zoanAdded = 0;
+            $zoansAdded = 0;
 
-
-            if($i % $purchaseInterval === 0) {
+            if($day % $purchaseInterval === 0) {
 
                 # Buy if possible
                 while ($zoan->price() <= $this->zoon) {
                     $this->addZoan($zoan);
-                    $zoanAdded++;
+                    $zoansAdded++;
                 }
             }
 
             $income = $this->farm();
             $incomePeriod += $income;
 
-            if ($zoanAdded > 0 || $i === 1) {
+            if ($zoansAdded > 0) {
                 $this->results[] = [
-                    'day' => $i,
+                    'day' => $day,
                     'income' => round($income, 2),
                     'income_period' => round($incomePeriod, 2),
-                    'zoans_purchased' => $zoanAdded,
+                    'zoans_purchased' => $zoansAdded,
                     'zoans_purchased_total' => count($this->zoans),
+                    'zoonPrice' => $this->zoonToUSD,
                 ];
 
                 $incomePeriod = 0;
+
+                $this->zoonToUSD -= $this->zoonToUSD * $inflation;
             }
         }
     }
 
     public function outputAsTable(string $currency): void
     {
-        echo "Initial investment: " . number_format(
-                $this->toCurrency($this->initialInvestment, $currency), 2
-            ) . " $currency<br>";
-        echo "Total investment: " . number_format($this->toCurrency($this->investment, $currency), 2)
+        echo "Initial investment: " . $this->initialInvestment . " $currency<br>";
+        echo "Total investment: " . number_format($this->toCurrency($this->investment, $this->zoonToUSD, $currency), 2)
             . " $currency<br>";
         echo "Initial hash rate: " . number_format($this->initialHashRate) . "<br>";
-        echo "Final hash rate: " . number_format($this->hashRate) . "<br><br>";
+        echo "Final hash rate: " . number_format($this->hashRate) . "<br>";
+        echo "Final zoon price: " . $this->zoonToUSD . "<br><br>";
+
 
         echo <<<HTML
 <style>
@@ -144,7 +149,7 @@ HTML;
         <td>{$result['day']}</td>
         <td>{$result['income']}</td>
         <td>{$result['income_period']}</td>
-        <td>{$this->toCurrency($result['income_period'], $currency)}</td>
+        <td>{$this->toCurrency($result['income_period'], $result['zoonPrice'], $currency)}</td>
         <td>{$result['zoans_purchased']}</td>
         <td>{$result['zoans_purchased_total']}</td>
     </tr>
@@ -299,7 +304,12 @@ class CoinMarketCap
     <input type="text" name="hashrate" value="<?= $_POST['hashrate'] ?: 2162451200 ?>"/><br>
     Zoon price<br>
     <input type="text" name="zoonPrice" value="<?= $_POST['zoonPrice'] ?: CoinMarketCap::getPrice('zoon') ?>"/><br>
-
+    Period<br>
+    <input name="period" value="<?= $_POST['period'] ?: 180 ?>" /><br>
+    Purchase interval<br>
+    <input name="purchaseInterval" value="<?= $_POST['purchaseInterval'] ?: 5 ?>" /><br>
+    Daily zoon price decay percentage<br>
+    <input name="decay" value="<?= $_POST['decay'] ?: '0' ?>" /><br>
     <input type="submit"/>
 </form>
 <?php
@@ -309,7 +319,7 @@ if (!empty($_POST)) {
     $zoans[] = new Zoan(2, 4, 3800);
 
     $farmer = new CryptoZoonFarmer($zoans, $_POST['hashrate'], $_POST['zoonPrice']);
-    $farmer->executeStrategy(180, new Zoan(1, 3, 1750), 5);
+    $farmer->executeStrategy((int)$_POST['period'], new Zoan(1, 3, 1750), (int)$_POST['purchaseInterval'], $_POST['purchaseInterval'] * $_POST['decay'] / 100.0);
     $farmer->outputAsTable(CryptoZoonFarmer::$DKK);
 }
 ?>
