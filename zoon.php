@@ -260,33 +260,33 @@ class CoinMarketCap
     /**
      * @throws JsonException
      */
-    public static function getPrice(string $sybmol): float
+    public static function getPrice(string $symbol): float
     {
         $url = 'https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest';
         $parameters = [
-            'symbol' => $sybmol,
+            'symbol' => $symbol,
         ];
 
         $headers = [
             'Accepts: application/json',
             'X-CMC_PRO_API_KEY: aca0fbe3-8af9-4e55-be68-d64a5eaf8283'
         ];
-        $qs = http_build_query($parameters); // query string encode the parameters
-        $request = "{$url}?{$qs}"; // create the request URL
+        $qs = http_build_query($parameters);
+        $request = "{$url}?{$qs}";
 
 
-        $curl = curl_init(); // Get cURL resource
+        $curl = curl_init();
         // Set cURL options
         curl_setopt_array(
             $curl, [
-            CURLOPT_URL => $request,            // set the request URL
-            CURLOPT_HTTPHEADER => $headers,     // set the headers
-            CURLOPT_RETURNTRANSFER => 1         // ask for raw response instead of bool
+            CURLOPT_URL => $request,
+            CURLOPT_HTTPHEADER => $headers,
+            CURLOPT_RETURNTRANSFER => 1
         ]
         );
 
-        $response = curl_exec($curl); // Send the request, save the response
-        curl_close($curl); // Close request
+        $response = curl_exec($curl);
+        curl_close($curl);
 
         $response = json_decode($response, false, 512, JSON_THROW_ON_ERROR);
 
@@ -301,7 +301,7 @@ class CoinMarketCap
 <body>
 <form method="post" action="/_custom/cryptozoon/zoon.php">
     Hash rate<br>
-    <input type="text" name="hashrate" value="<?= $_POST['hashrate'] ?: 2162451200 ?>"/><br>
+    <input type="text" name="hashrate" value="<?= $_POST['hashrate'] ?: 2256876400 ?>"/><br>
     Zoon price<br>
     <input type="text" name="zoonPrice" value="<?= $_POST['zoonPrice'] ?: CoinMarketCap::getPrice('zoon') ?>"/><br>
     Period<br>
@@ -314,7 +314,7 @@ class CoinMarketCap
 </form>
 <?php
 if (!empty($_POST)) {
-    $zoans = Zoan::makeMulti(2, 1, 3, 2000);
+    $zoans = Zoan::makeMulti(2, 1, 2, 2000);
     $zoans = array_merge($zoans, Zoan::makeMulti(24, 1, 3, 1800));
     $zoans[] = new Zoan(2, 4, 3800);
 
