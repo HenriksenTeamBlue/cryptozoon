@@ -123,7 +123,8 @@ class CryptoZoonFarmer
             . " $currency<br>";
         echo "Initial hash rate: " . number_format($this->initialHashRate) . "<br>";
         echo "Final hash rate: " . number_format($this->hashRate) . "<br>";
-        echo "Final zoon price: " . $this->zoonToUSD . "<br><br>";
+        echo "Initial zoon price " . PancakeSwap::getPrice() . " USD<br>";
+        echo "Final zoon price: " . $this->zoonToUSD . " USD<br><br>";
 
 
         echo <<<HTML
@@ -258,14 +259,19 @@ class Zoan
 class PancakeSwap {
 
     /**
-     * @throws JsonException
+     * @return float
      */
     public static function getPrice(): float
     {
         $url = 'https://api.pancakeswap.info/api/v2/tokens/0x9d173e6c594f479b4d47001f8e6a95a7adda42bc';
 
         $response = file_get_contents($url);
-        $response = json_decode($response, false, 512, JSON_THROW_ON_ERROR);
+        try {
+            $response = json_decode($response, false, 512, JSON_THROW_ON_ERROR);
+        } catch (Exception $e) {
+            return -1;
+        }
+
 
         return (float)$response->data->price;
     }
@@ -311,6 +317,10 @@ class CoinMarketCap
     }
 }
 
+$redis = new Redis();
+
+$redis->connect('redis');
+$redis->setOption(Redis::OPT_SERIALIZER, Redis::SERIALIZER_PHP);
 ?>
 <html lang="en">
 <head>
@@ -320,13 +330,11 @@ class CoinMarketCap
     Start zoon<br>
     <input name="start_zoon" value="<?= $_POST['start_zoon'] ?: '0' ?>"><br>
     Hash rate<br>
-    <input type="text" name="hashrate" value="<?= $_POST['hashrate'] ?: 2304000400 ?>"/><br>
-    Zoon price<br>
-    <input type="text" name="zoonPrice" value="<?= $_POST['zoonPrice'] ?: PancakeSwap::getPrice() ?>"/><br>
+    <input type="text" name="hashrate" value="<?= $redis->get('zoon_hashrate') ?>"/><br>
     Period<br>
     <input name="period" value="<?= $_POST['period'] ?: 180 ?>" /><br>
     Purchase interval<br>
-    <input name="purchaseInterval" value="<?= $_POST['purchaseInterval'] ?: 5 ?>" /><br>
+    <input name="purchaseInterval" value="<?= $_POST['purchaseInterval'] ?: 1 ?>" /><br>
     Daily zoon price decay percentage<br>
     <input name="decay" value="<?= $_POST['decay'] ?: '0' ?>" /><br><br>
     Zoan rarity<br>
@@ -339,15 +347,18 @@ class CoinMarketCap
 </form>
 <?php
 if (!empty($_POST)) {
+
+    $redis->set('zoon_hashrate', $_POST['hashrate']);
+
     $zoans = Zoan::makeMulti(2, 1, 2, 2000);
-    $zoans = array_merge($zoans, Zoan::makeMulti(24, 1, 3, 1800));
+    $zoans = array_merge($zoans, Zoan::makeMulti(25, 1, 3, 1800));
     $zoans[] = new Zoan(2, 4, 3800);
 
     $zoanToPurchase = new Zoan((int)$_POST['zoan_rarity'], (int)$_POST['zoan_level'], (int)$_POST['zoan_price']);
 
-    $farmer = new CryptoZoonFarmer($zoans, (float)$_POST['start_zoon'], $_POST['hashrate'], $_POST['zoonPrice']);
+    $farmer = new CryptoZoonFarmer($zoans, (float)$_POST['start_zoon'], $_POST['hashrate'], PancakeSwap::getPrice());
     $farmer->executeStrategy((int)$_POST['period'], $zoanToPurchase, (int)$_POST['purchaseInterval'], $_POST['purchaseInterval'] * $_POST['decay'] / 100.0);
-    $farmer->outputAsTable(CryptoZoonFarmer::$DKK);
+    $farmer->outputAsTable(CryptoZoonFarmer::$USD);
 }
 ?>
 
