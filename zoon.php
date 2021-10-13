@@ -321,6 +321,30 @@ $redis = new Redis();
 
 $redis->connect('redis');
 $redis->setOption(Redis::OPT_SERIALIZER, Redis::SERIALIZER_PHP);
+
+if (!empty($_POST)) {
+    $oldHashRate = $redis->get('zoon_hashrate');
+    $redis->set('zoon_hashrate', $_POST['hashrate']);
+
+    # Store changes in hashrate with date they were registered
+    if($oldHashRate !== $_POST['hashrate']) {
+        $redis->hset('zoon_hashrate_historical', date('Y-m-d H:i:s'), $_POST['hashrate']);
+    }
+
+    $redis->set('zoan_price', $_POST['zoan_price']);
+
+    $zoans = Zoan::makeMulti(2, 1, 2, 2000);
+    $zoans = array_merge($zoans, Zoan::makeMulti(25, 1, 3, 1800));
+    $zoans[] = new Zoan(2, 4, 3800);
+
+    $zoanToPurchase = new Zoan((int)$_POST['zoan_rarity'], (int)$_POST['zoan_level'], (int)$_POST['zoan_price']);
+
+    $farmer = new CryptoZoonFarmer($zoans, (float)$_POST['start_zoon'], $_POST['hashrate'], PancakeSwap::getPrice());
+    $farmer->executeStrategy(
+        (int)$_POST['period'], $zoanToPurchase, (int)$_POST['purchaseInterval'],
+        $_POST['purchaseInterval'] * $_POST['decay'] / 100.0
+    );
+}
 ?>
 <html lang="en">
 <head>
@@ -342,23 +366,12 @@ $redis->setOption(Redis::OPT_SERIALIZER, Redis::SERIALIZER_PHP);
     Zoan level<br>
     <input name="zoan_level" value="<?= $_POST['zoan_level'] ?: '3'?>" /><br>
     Zoan price<br>
-    <input name="zoan_price" value="<?= $_POST['zoan_price'] ?: '1800'?>" /><br>
+    <input name="zoan_price" value="<?= $redis->get('zoan_price') ?>" /><br>
     <input type="submit"/>
 </form>
 <?php
 if (!empty($_POST)) {
-
-    $redis->set('zoon_hashrate', $_POST['hashrate']);
-
-    $zoans = Zoan::makeMulti(2, 1, 2, 2000);
-    $zoans = array_merge($zoans, Zoan::makeMulti(25, 1, 3, 1800));
-    $zoans[] = new Zoan(2, 4, 3800);
-
-    $zoanToPurchase = new Zoan((int)$_POST['zoan_rarity'], (int)$_POST['zoan_level'], (int)$_POST['zoan_price']);
-
-    $farmer = new CryptoZoonFarmer($zoans, (float)$_POST['start_zoon'], $_POST['hashrate'], PancakeSwap::getPrice());
-    $farmer->executeStrategy((int)$_POST['period'], $zoanToPurchase, (int)$_POST['purchaseInterval'], $_POST['purchaseInterval'] * $_POST['decay'] / 100.0);
-    $farmer->outputAsTable(CryptoZoonFarmer::$USD);
+    $farmer->outputAsTable(CryptoZoonFarmer::$DKK);
 }
 ?>
 
