@@ -334,7 +334,7 @@ if (!empty($_POST)) {
     $redis->set('zoan_price', $_POST['zoan_price']);
 
     $zoans = Zoan::makeMulti(2, 1, 2, 2000);
-    $zoans = array_merge($zoans, Zoan::makeMulti(25, 1, 3, 1800));
+    $zoans = array_merge($zoans, Zoan::makeMulti(27, 1, 3, 1800));
     $zoans[] = new Zoan(2, 4, 3800);
 
     $zoanToPurchase = new Zoan((int)$_POST['zoan_rarity'], (int)$_POST['zoan_level'], (int)$_POST['zoan_price']);
