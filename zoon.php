@@ -4,7 +4,7 @@ class CryptoZoonFarmer
 {
     private $hashRate = 0;
     private $totalHashRate;
-    private $poolDailyReward = 1788500;
+    private $poolDailyReward = 1822500; // 2.001.902
     private $zoans;
     private $zoon;
     private $zoonToUSD;
@@ -265,7 +265,7 @@ class PancakeSwap {
     {
         $url = 'https://api.pancakeswap.info/api/v2/tokens/0x9d173e6c594f479b4d47001f8e6a95a7adda42bc';
 
-        $response = file_get_contents($url);
+        $response = file_get_contents($ur½l);
         try {
             $response = json_decode($response, false, 512, JSON_THROW_ON_ERROR);
         } catch (Exception $e) {
@@ -333,8 +333,8 @@ if (!empty($_POST)) {
 
     $redis->set('zoan_price', $_POST['zoan_price']);
 
-    $zoans = Zoan::makeMulti(2, 1, 2, 2000);
-    $zoans = array_merge($zoans, Zoan::makeMulti(27, 1, 3, 1800));
+    $zoans = Zoan::makeMulti(3, 1, 2, 2000);
+    $zoans = array_merge($zoans, Zoan::makeMulti(30, 1, 3, 1800));
     $zoans[] = new Zoan(2, 4, 3800);
 
     $zoanToPurchase = new Zoan((int)$_POST['zoan_rarity'], (int)$_POST['zoan_level'], (int)$_POST['zoan_price']);
