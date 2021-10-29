@@ -265,7 +265,7 @@ class PancakeSwap {
     {
         $url = 'https://api.pancakeswap.info/api/v2/tokens/0x9d173e6c594f479b4d47001f8e6a95a7adda42bc';
 
-        $response = file_get_contents($ur½l);
+        $response = file_get_contents($url);
         try {
             $response = json_decode($response, false, 512, JSON_THROW_ON_ERROR);
         } catch (Exception $e) {
@@ -317,6 +317,89 @@ class CoinMarketCap
     }
 }
 
+class HashRate {
+
+    private $redis;
+    private $days = [];
+
+    public function __construct($redis) {
+        $this->redis = $redis;
+
+        $this->loadData();
+    }
+
+    private function loadData() {
+
+        $data = $this->redis->hGetAll('zoon_hashrate_historical');
+
+        foreach($data as $datetime => $rate) {
+
+            $day = substr($datetime,0, 10);
+
+            $this->days[$day] = $rate;
+        }
+    }
+
+    public function makeGraph($img_width = 450, $img_height = 300, $margins = 20) {
+        # ------- The graph values in the form of associative array
+        $values= $this->days;
+
+        # ---- Find the size of graph by substracting the size of borders
+        $graph_width=$img_width - $margins * 2;
+        $graph_height=$img_height - $margins * 2;
+        $img=imagecreate($img_width,$img_height);
+
+
+        $bar_width=20;
+        $total_bars=count($values);
+        $gap= ($graph_width- $total_bars * $bar_width ) / ($total_bars +1);
+
+        # -------  Define Colors ----------------
+        $bar_color=imagecolorallocate($img,0,64,128);
+        $background_color=imagecolorallocate($img,240,240,255);
+        $border_color=imagecolorallocate($img,200,200,200);
+        $line_color=imagecolorallocate($img,220,220,220);
+
+        # ------ Create the border around the graph ------
+
+        imagefilledrectangle($img,1,1,$img_width-2,$img_height-2,$border_color);
+        imagefilledrectangle($img,$margins,$margins,$img_width-1-$margins,$img_height-1-$margins,$background_color);
+
+
+        # ------- Max value is required to adjust the scale -------
+        $max_value=max($values);
+        $ratio= $graph_height/$max_value;
+
+
+        # -------- Create scale and draw horizontal lines  --------
+        $horizontal_lines=20;
+        $horizontal_gap=$graph_height/$horizontal_lines;
+
+        for($i=1;$i<=$horizontal_lines;$i++){
+            $y=$img_height - $margins - $horizontal_gap * $i ;
+            imageline($img,$margins,$y,$img_width-$margins,$y,$line_color);
+            $v= (int)($horizontal_gap * $i / $ratio);
+            imagestring($img,0,5,$y-5,$v,$bar_color);
+
+        }
+
+
+        # ----------- Draw the bars here ------
+        for($i=0;$i< $total_bars; $i++){
+            # ------ Extract key and value pair from the current pointer position
+            [$key, $value] = each($values);
+            $x1= $margins + $gap + $i * ($gap+$bar_width) ;
+            $x2= $x1 + $bar_width;
+            $y1=$margins +$graph_height- (int)($value * $ratio);
+            $y2=$img_height-$margins;
+            imagestring($img,0,$x1+3,$y1-10,$value,$bar_color);imagestring($img,0,$x1+3,$img_height-15,$key,$bar_color);
+            imagefilledrectangle($img,$x1,$y1,$x2,$y2,$bar_color);
+        }
+        header("Content-type:image/png");
+        imagepng($img);
+    }
+}
+
 $redis = new Redis();
 
 $redis->connect('redis');
@@ -334,17 +417,30 @@ if (!empty($_POST)) {
     $redis->set('zoan_price', $_POST['zoan_price']);
 
     $zoans = Zoan::makeMulti(3, 1, 2, 2000);
-    $zoans = array_merge($zoans, Zoan::makeMulti(30, 1, 3, 1800));
+    $zoans = array_merge($zoans, Zoan::makeMulti(33, 1, 3, 1800));
     $zoans[] = new Zoan(2, 4, 3800);
 
     $zoanToPurchase = new Zoan((int)$_POST['zoan_rarity'], (int)$_POST['zoan_level'], (int)$_POST['zoan_price']);
 
-    $farmer = new CryptoZoonFarmer($zoans, (float)$_POST['start_zoon'], $_POST['hashrate'], PancakeSwap::getPrice());
+    $price = PancakeSwap::getPrice();
+
+    if ($price < 0) {
+        $price = CoinMarketCap::getPrice();
+    }
+
+    $farmer = new CryptoZoonFarmer($zoans, (float)$_POST['start_zoon'], $_POST['hashrate'], $price);
     $farmer->executeStrategy(
         (int)$_POST['period'], $zoanToPurchase, (int)$_POST['purchaseInterval'],
         $_POST['purchaseInterval'] * $_POST['decay'] / 100.0
     );
 }
+
+if($_GET['hashrate']) {
+    $rate = new HashRate($redis);
+    $rate->makeGraph(1024, 768);
+    exit;
+}
+
 ?>
 <html lang="en">
 <head>
@@ -369,10 +465,13 @@ if (!empty($_POST)) {
     <input name="zoan_price" value="<?= $redis->get('zoan_price') ?>" /><br>
     <input type="submit"/>
 </form>
+<img src="/_custom/cryptozoon/zoon.php?hashrate=1" /><br><br>
 <?php
 if (!empty($_POST)) {
     $farmer->outputAsTable(CryptoZoonFarmer::$DKK);
 }
+
+
 ?>
 
 </body>
