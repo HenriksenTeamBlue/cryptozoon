@@ -4,6 +4,7 @@ class CryptoZoonFarmer
 {
     private $hashRate = 0;
     private $totalHashRate;
+    private $hashRateDailyIncrease;
     private $poolDailyReward = 1822500; // 2.001.902
     private $zoans;
     private $zoon;
@@ -19,10 +20,11 @@ class CryptoZoonFarmer
     public static $EUR = 'EUR';
     public static $DKK = 'DKK';
 
-    public function __construct(array $zoans, float $zoon, int $hashRate, float $zoonPrice) {
+    public function __construct(array $zoans, float $zoon, int $hashRate, float $zoonPrice, int $hashRateDailyIncrease = 0) {
         $this->addZoans($zoans);
 
         $this->totalHashRate = $hashRate;
+        $this->hashRateDailyIncrease = $hashRateDailyIncrease;
         $this->zoonToUSD = $zoonPrice;
         $this->zoon = $zoon;
 
@@ -107,12 +109,16 @@ class CryptoZoonFarmer
                     'zoans_purchased' => $zoansAdded,
                     'zoans_purchased_total' => count($this->zoans),
                     'zoonPrice' => $this->zoonToUSD,
+                    'total_hash_rate' => $this->totalHashRate,
                 ];
 
                 $incomePeriod = 0;
 
                 $this->zoonToUSD -= $this->zoonToUSD * $inflation;
             }
+
+            # Increase the hashrate with the average daily increase of all logged previous entries
+            $this->totalHashRate += $this->hashRateDailyIncrease;
         }
     }
 
@@ -124,7 +130,8 @@ class CryptoZoonFarmer
         echo "Initial hash rate: " . number_format($this->initialHashRate) . "<br>";
         echo "Final hash rate: " . number_format($this->hashRate) . "<br>";
         echo "Initial zoon price " . PancakeSwap::getPrice() . " USD<br>";
-        echo "Final zoon price: " . $this->zoonToUSD . " USD<br><br>";
+        echo "Final zoon price: " . $this->zoonToUSD . " USD<br>";
+        echo "Start date: " . date('Y-m-d') . '<br><br>';
 
 
         echo <<<HTML
@@ -140,6 +147,7 @@ class CryptoZoonFarmer
         <th>Income period $currency</th>
         <th>Zoans purchased</th>
         <th>Zoans purchased total</th>
+        <th>Total hashrate</th>
     </tr>
 HTML;
 
@@ -154,6 +162,7 @@ HTML;
         <td>{$this->toCurrency($result['income_period'], $result['zoonPrice'], $currency)}</td>
         <td>{$result['zoans_purchased']}</td>
         <td>{$result['zoans_purchased_total']}</td>
+        <td>{$result['total_hash_rate']}</td>
     </tr>
 HTML;
         }
@@ -162,6 +171,10 @@ HTML;
 </table>
 HTML;
 
+    }
+
+    public function getTotalHashRate() : int {
+        return $this->totalHashRate;
     }
 }
 
@@ -319,32 +332,73 @@ class CoinMarketCap
 
 class HashRate {
 
-    private $redis;
     private $days = [];
 
-    public function __construct($redis) {
-        $this->redis = $redis;
-
+    public function __construct() {
         $this->loadData();
     }
 
-    private function loadData() {
+    public function storeData(int $hashRate) : void {
 
-        $data = $this->redis->hGetAll('zoon_hashrate_historical');
+        $line = date('Y-m-d H:i:s') . "," . $hashRate . PHP_EOL;
+        $file = __DIR__ . '/hashRates.csv';
 
-        foreach($data as $datetime => $rate) {
+        file_put_contents($file, $line, FILE_APPEND);
+    }
 
-            $day = substr($datetime,0, 10);
+    private function loadData(): void {
 
-            $this->days[$day] = $rate;
+        $file = __DIR__ . '/hashRates.csv';
+
+        if(!file_exists($file)) {
+            file_put_contents($file, '');
         }
+
+        $handle = fopen($file, "rb");
+
+         while (($data = fgetcsv($handle, 1000)) !== FALSE) {
+             $this->days[substr($data,0, 10)] = $data[1];
+         }
+    }
+
+    public function averageDailyChange() : int {
+
+        if(count($this->days) < 2) {
+            return 0;
+        }
+
+        $dates = array_keys($this->days);
+        $rates = array_values($this->days);
+
+        $numberOfDays = $this->dateDiff($dates[0], $dates[count($dates) - 1]);
+        $difference = $rates[count($rates) - 1] - $rates[0];
+
+        return round($difference / $numberOfDays);
+    }
+
+    public function latestHashRate() : int {
+        if(empty($this->days)) {
+            return 0;
+        }
+
+        $rates = array_values($this->days);
+
+        return $rates[count($rates) - 1];
+    }
+
+    private function dateDiff(string $date1, string $date2): int {
+        $date1_ts = strtotime($date1);
+        $date2_ts = strtotime($date2);
+        $diff = $date2_ts - $date1_ts;
+
+        return round($diff / 86400);
     }
 
     public function makeGraph($img_width = 450, $img_height = 300, $margins = 20) {
         # ------- The graph values in the form of associative array
         $values= $this->days;
 
-        # ---- Find the size of graph by substracting the size of borders
+        # ---- Find the size of graph by subtracting the size of borders
         $graph_width=$img_width - $margins * 2;
         $graph_height=$img_height - $margins * 2;
         $img=imagecreate($img_width,$img_height);
@@ -400,25 +454,19 @@ class HashRate {
     }
 }
 
-$redis = new Redis();
-
-$redis->connect('redis');
-$redis->setOption(Redis::OPT_SERIALIZER, Redis::SERIALIZER_PHP);
+$hashRate = new HashRate();
 
 if (!empty($_POST)) {
-    $oldHashRate = $redis->get('zoon_hashrate');
-    $redis->set('zoon_hashrate', $_POST['hashrate']);
+    $oldHashRate = $hashRate->latestHashRate();
 
     # Store changes in hashrate with date they were registered
     if($oldHashRate !== $_POST['hashrate']) {
-        $redis->hset('zoon_hashrate_historical', date('Y-m-d H:i:s'), $_POST['hashrate']);
+        $hashRate->storeData((int)$_POST['hashrate']);
     }
 
-    $redis->set('zoan_price', $_POST['zoan_price']);
-
-    $zoans = Zoan::makeMulti(3, 1, 2, 2000);
-    $zoans = array_merge($zoans, Zoan::makeMulti(33, 1, 3, 1800));
-    $zoans[] = new Zoan(2, 4, 3800);
+    $zoans = Zoan::makeMulti(3, 1, 2, 800);
+    $zoans = array_merge($zoans, Zoan::makeMulti(34, 1, 3, 1100));
+    $zoans[] = new Zoan(2, 4, 2600);
 
     $zoanToPurchase = new Zoan((int)$_POST['zoan_rarity'], (int)$_POST['zoan_level'], (int)$_POST['zoan_price']);
 
@@ -428,7 +476,7 @@ if (!empty($_POST)) {
         $price = CoinMarketCap::getPrice();
     }
 
-    $farmer = new CryptoZoonFarmer($zoans, (float)$_POST['start_zoon'], $_POST['hashrate'], $price);
+    $farmer = new CryptoZoonFarmer($zoans, (float)$_POST['start_zoon'], $_POST['hashrate'], $price, $_POST['hash_rate_rise']);
     $farmer->executeStrategy(
         (int)$_POST['period'], $zoanToPurchase, (int)$_POST['purchaseInterval'],
         $_POST['purchaseInterval'] * $_POST['decay'] / 100.0
@@ -436,7 +484,7 @@ if (!empty($_POST)) {
 }
 
 if($_GET['hashrate']) {
-    $rate = new HashRate($redis);
+    $rate = new HashRate();
     $rate->makeGraph(1024, 768);
     exit;
 }
@@ -450,7 +498,7 @@ if($_GET['hashrate']) {
     Start zoon<br>
     <input name="start_zoon" value="<?= $_POST['start_zoon'] ?: '0' ?>"><br>
     Hash rate<br>
-    <input type="text" name="hashrate" value="<?= $redis->get('zoon_hashrate') ?>"/><br>
+    <input type="text" name="hashrate" value="<?= $hashRate->latestHashRate() ?>"/><br>
     Period<br>
     <input name="period" value="<?= $_POST['period'] ?: 180 ?>" /><br>
     Purchase interval<br>
@@ -462,10 +510,15 @@ if($_GET['hashrate']) {
     Zoan level<br>
     <input name="zoan_level" value="<?= $_POST['zoan_level'] ?: '3'?>" /><br>
     Zoan price<br>
-    <input name="zoan_price" value="<?= $redis->get('zoan_price') ?>" /><br>
+    <input name="zoan_price" value="<?= $_POST['zoan_price'] ?: 1100 ?>" /><br>
+    Hash rate daily rise<br>
+    <input type="text" name="hash_rate_rise" value="<?= $_POST['hash_rate_rise'] ?: $hashRate->averageDailyChange() ?>">
+    <br><br>
     <input type="submit"/>
 </form>
+<!--
 <img src="/_custom/cryptozoon/zoon.php?hashrate=1" /><br><br>
+-->
 <?php
 if (!empty($_POST)) {
     $farmer->outputAsTable(CryptoZoonFarmer::$DKK);
